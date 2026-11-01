@@ -1,0 +1,477 @@
+<div class="app-container">
+  <!-- Top Header Bar -->
+  <header class="app-header">
+    <div class="header-left">
+      <div class="logo-box">
+        <span class="logo-icon">📦</span>
+      </div>
+      <div class="title-group">
+        <h1 class="app-title">Inventory Intelligence Agent</h1>
+        <span class="app-subtitle">Executive Business Insights • Pure Core Java Server • MySQL</span>
+      </div>
+    </div>
+
+    <div class="header-right">
+      <!-- Core Java Status Pill -->
+      <div class="status-pill" [class.online]="serverOnline()" [class.offline]="!serverOnline()" title="Core Java HTTP Server Status">
+        <span class="status-dot"></span>
+        <span class="status-text">Core Java :8080</span>
+      </div>
+
+      <!-- MySQL Status Pill -->
+      <button class="status-pill interactive" [class.online]="dbStatus().connected" [class.offline]="!dbStatus().connected" (click)="openDbModal()" title="Click to view/configure MySQL Connection">
+        <span class="status-dot"></span>
+        <span class="status-text">MySQL: {{ dbStatus().connected ? 'Connected' : 'Offline' }}</span>
+        @if (dbStatus().totalProducts) {
+          <span class="badge-mini">{{ dbStatus().totalProducts }} items</span>
+        }
+      </button>
+
+      <!-- Gemini Model Pill -->
+      <button class="status-pill interactive" [class.online]="configStatus().hasApiKey" [class.warning]="!configStatus().hasApiKey" (click)="showSettingsModal.set(true)" title="Click to configure Gemini API Key">
+        <span class="status-icon">✨</span>
+        <span class="status-text">{{ configStatus().model }}</span>
+      </button>
+
+      <!-- Database Schema Button -->
+      <button class="btn-secondary" (click)="openSchemaDrawer()" title="View Inventory Database Schema">
+        <span>📋 Database Schema</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Chat Workspace -->
+  <main class="chat-workspace">
+    <div class="chat-scroll-container">
+      
+      <!-- Sample Prompts Carousel / Grid -->
+      <div class="sample-prompts-card">
+        <div class="sample-header">
+          <span class="sparkle-icon">💡</span>
+          <span class="sample-title">Ask any dynamic business or supply chain question:</span>
+        </div>
+        <div class="prompt-chips">
+          @for (prompt of samplePrompts; track prompt) {
+            <button class="prompt-chip" (click)="sendMessage(prompt)" [disabled]="isThinking()">
+              {{ prompt }}
+            </button>
+          }
+        </div>
+      </div>
+
+      <!-- Messages Stream -->
+      <div class="messages-list">
+        @for (msg of messages(); track msg.id) {
+          <div class="message-wrapper" [class.user]="msg.sender === 'user'" [class.agent]="msg.sender === 'agent'">
+            
+            <!-- Avatar -->
+            <div class="avatar" [class.user-avatar]="msg.sender === 'user'" [class.agent-avatar]="msg.sender === 'agent'">
+              {{ msg.sender === 'user' ? '👤' : '🤖' }}
+            </div>
+
+            <!-- Content Container -->
+            <div class="message-body">
+              <div class="sender-name">
+                {{ msg.sender === 'user' ? 'You' : 'Inventory Intelligence Agent' }}
+                <span class="msg-time">{{ msg.timestamp | date:'shortTime' }}</span>
+              </div>
+
+              <!-- Loading Indicator -->
+              @if (msg.loading) {
+                <div class="thinking-box">
+                  <div class="pulse-spinner"></div>
+                  <div class="thinking-text">
+                    <span>Synthesizing business analysis...</span>
+                    <span class="subtext">Querying MySQL database & processing live supply chain records...</span>
+                  </div>
+                </div>
+              }
+
+              <!-- Agent Message Text (Formatted Executive HTML) -->
+              @if (msg.text) {
+                <div class="message-text" [innerHTML]="formatMarkdown(msg.text)"></div>
+              }
+
+              <!-- Grounding Verification Bar (Data Transparency & Anti-Hallucination) -->
+              @if (msg.toolCalls && msg.toolCalls.length > 0) {
+                <div class="grounding-verification-bar">
+                  <div class="grounding-info">
+                    <span class="grounding-shield-icon">🛡️</span>
+                    <span class="grounding-label">Grounded in Live Data:</span>
+                    <span class="grounding-badge">{{ msg.toolCalls.length }} MySQL queries executed</span>
+                  </div>
+                  
+                  <button class="btn-toggle-audit" (click)="toggleAuditView(msg)">
+                    {{ msg.showAudit ? '✕ Hide Data Audit' : '🔍 Verify Real DB Data & SQL (' + msg.toolCalls.length + ')' }}
+                  </button>
+                </div>
+
+                <!-- Optional Technical Data Audit (Collapsible on Demand) -->
+                @if (msg.showAudit) {
+                  <div class="audit-drawer">
+                    <div class="audit-drawer-title">
+                      <span class="audit-badge">Data Transparency Audit</span>
+                      <span class="audit-desc">Inspect exact SQL queries & raw sub-tables to verify zero hallucinations.</span>
+                    </div>
+
+                    @for (trace of msg.toolCalls; track trace.query) {
+                      <div class="tool-trace-card" [class.success]="trace.success" [class.failure]="!trace.success">
+                        
+                        <!-- Trace Header -->
+                        <div class="trace-header" (click)="toggleToolDetails(trace)">
+                          <div class="trace-info-left">
+                            <span class="trace-icon">⚡</span>
+                            <span class="tool-name">{{ trace.toolName }}</span>
+                            <span class="execution-badge">{{ trace.executionTimeMs }} ms</span>
+                            <span class="rows-badge">{{ trace.rowCount }} rows extracted</span>
+                          </div>
+                          <div class="trace-info-right">
+                            <span class="status-tag" [class.success]="trace.success" [class.failed]="!trace.success">
+                              {{ trace.success ? 'EXECUTED' : 'FAILED' }}
+                            </span>
+                            <span class="toggle-icon">{{ trace.showDetails ? '▲ Hide Raw View' : '▼ View SQL & Rows' }}</span>
+                          </div>
+                        </div>
+
+                        <!-- Trace Body -->
+                        @if (trace.showDetails) {
+                          <div class="trace-content">
+                            @if (trace.explanation) {
+                              <div class="trace-explanation">
+                                <strong>Analytical Intent:</strong> {{ trace.explanation }}
+                              </div>
+                            }
+
+                            <!-- Generated SQL Display -->
+                            @if (trace.query && trace.query !== 'N/A') {
+                              <div class="sql-box-header">
+                                <span>Generated SQL Query (Core Java JDBC)</span>
+                                <button class="btn-copy" (click)="copyToClipboard(trace.query)">📋 Copy SQL</button>
+                              </div>
+                              <pre class="sql-code"><code>{{ trace.query }}</code></pre>
+                            }
+
+                            <!-- Extracted Sub-Table Preview -->
+                            @if (trace.subTable && trace.subTable.length > 0) {
+                              <div class="subtable-wrapper">
+                                <div class="subtable-title">Extracted Sub-Table (Raw MySQL Data):</div>
+                                <div class="table-responsive">
+                                  <table class="data-table">
+                                    <thead>
+                                      <tr>
+                                        @for (col of getTableKeys(trace.subTable[0]); track col) {
+                                          <th>{{ col }}</th>
+                                        }
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      @for (row of trace.subTable; track $index) {
+                                        <tr>
+                                          @for (col of getTableKeys(trace.subTable[0]); track col) {
+                                            <td>{{ row[col] }}</td>
+                                          }
+                                        </tr>
+                                      }
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            }
+
+                            @if (trace.message) {
+                              <div class="trace-message" [class.error-msg]="!trace.success">
+                                {{ trace.message }}
+                              </div>
+                            }
+                          </div>
+                        }
+                      </div>
+                    }
+                  </div>
+                }
+              }
+
+            </div>
+          </div>
+        }
+        <div id="chat-scroll-anchor"></div>
+      </div>
+    </div>
+
+    <!-- Bottom Prompt Input Area -->
+    <footer class="prompt-bar">
+      <div class="prompt-input-wrapper">
+        <textarea
+          class="prompt-textarea"
+          [(ngModel)]="userInput"
+          (keydown.enter)="$event.preventDefault(); sendMessage()"
+          placeholder="Ask any business inventory prompt... e.g. Which products are likely to succeed or fail based on current stock and movements?"
+          rows="1"
+          [disabled]="isThinking()"
+        ></textarea>
+        
+        <div class="prompt-actions">
+          <button class="btn-clear" (click)="clearChat()" title="Clear chat history">
+            Clear
+          </button>
+          <button
+            class="btn-send"
+            (click)="sendMessage()"
+            [disabled]="isThinking() || !userInput().trim()"
+            title="Send prompt to Inventory Intelligence Agent"
+          >
+            @if (isThinking()) {
+              <span class="spinner-mini"></span>
+              <span>Analyzing...</span>
+            } @else {
+              <span>Analyze</span>
+              <span class="send-arrow">➔</span>
+            }
+          </button>
+        </div>
+      </div>
+      <div class="prompt-hint">
+        💼 Real-time business intelligence grounded in <strong>MySQL</strong> via <strong>Pure Core Java Server</strong> & <strong>Gemini Function Calling</strong>.
+      </div>
+    </footer>
+  </main>
+
+  <!-- Gemini API Key Settings Modal -->
+  @if (showSettingsModal()) {
+    <div class="modal-backdrop" (click)="showSettingsModal.set(false)">
+      <div class="modal-card" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <h3>✨ Configure Gemini Intelligence</h3>
+          <button class="modal-close" (click)="showSettingsModal.set(false)">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label>Model Version:</label>
+            <select class="form-control" [(ngModel)]="selectedModel">
+              <option value="gemini-3-flash-preview">gemini-3-flash-preview (High Quota & Active)</option>
+              <option value="gemini-3.6-flash">gemini-3.6-flash (Low Quota: 20 RPD)</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label>Gemini API Key:</label>
+            <input
+              type="password"
+              class="form-control"
+              [(ngModel)]="apiKeyInput"
+              placeholder="Enter your Gemini API key..."
+            />
+            <small class="form-hint">Currently active: {{ configStatus().hasApiKey ? configStatus().maskedApiKey : 'None' }}</small>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-secondary" (click)="showSettingsModal.set(false)">Cancel</button>
+          <button class="btn-primary" (click)="saveApiKey()">Save Settings</button>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- MySQL Connection Settings Modal -->
+  @if (showDbModal()) {
+    <div class="modal-backdrop" (click)="showDbModal.set(false)">
+      <div class="modal-card modal-card-db" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <div class="modal-header-title">
+            <h3>🗄️ MySQL Database Connection & Verification</h3>
+            <p class="modal-subtitle">Live JDBC connection test via Core Java HikariCP</p>
+          </div>
+          <button class="modal-close" (click)="showDbModal.set(false)">✕</button>
+        </div>
+        <div class="modal-body">
+          <!-- Real-Time Live Status / Result Card -->
+          @if (dbTesting()) {
+            <div class="db-test-loading">
+              <span class="spinner-mini"></span>
+              <div class="test-loading-text">
+                <strong>Verifying Live JDBC Connection...</strong>
+                <span>Pinging MySQL server at <code>{{ dbHostInput }}:{{ dbPortInput }}/{{ dbNameInput }}</code> and reading table records...</span>
+              </div>
+            </div>
+          } @else if (dbFeedback()) {
+            @if (dbFeedback()!.success) {
+              <div class="db-feedback-card success">
+                <div class="feedback-header">
+                  <span class="feedback-icon">✅</span>
+                  <div>
+                    <h4 class="feedback-title">Live MySQL Connection Verified</h4>
+                    <p class="feedback-subtitle">Authentic JDBC handshake & schema counts confirmed from active database</p>
+                  </div>
+                </div>
+                <p class="feedback-message">{{ dbFeedback()!.message }}</p>
+                @if (dbFeedback()!.data; as data) {
+                  <div class="feedback-stats-grid">
+                    <div class="feedback-stat">
+                      <span class="stat-label">Host & Port</span>
+                      <span class="stat-val"><code>{{ data.host }}:{{ data.port }}</code></span>
+                    </div>
+                    <div class="feedback-stat">
+                      <span class="stat-label">Database Name</span>
+                      <span class="stat-val"><code>{{ data.database }}</code></span>
+                    </div>
+                    <div class="feedback-stat">
+                      <span class="stat-label">Verified Tables</span>
+                      <span class="stat-val highlight">{{ data.tableCount }} tables</span>
+                    </div>
+                    <div class="feedback-stat">
+                      <span class="stat-label">Live Inventory Products</span>
+                      <span class="stat-val highlight">{{ data.totalProducts ?? 0 }} items</span>
+                    </div>
+                    <div class="feedback-stat">
+                      <span class="stat-label">Total Stock Units</span>
+                      <span class="stat-val highlight">{{ data.totalStockUnits ?? 0 }} units</span>
+                    </div>
+                    <div class="feedback-stat">
+                      <span class="stat-label">JDBC Driver State</span>
+                      <span class="stat-badge-online">● ACTIVE & HEALTHY</span>
+                    </div>
+                  </div>
+                }
+              </div>
+            } @else {
+              <div class="db-feedback-card error">
+                <div class="feedback-header">
+                  <span class="feedback-icon">❌</span>
+                  <div>
+                    <h4 class="feedback-title">Connection Failed (Live Driver Error)</h4>
+                    <p class="feedback-subtitle">Direct error reported from MySQL JDBC driver</p>
+                  </div>
+                </div>
+                <div class="feedback-error-box">
+                  <code>{{ dbFeedback()!.message }}</code>
+                </div>
+                <div class="feedback-tips">
+                  <strong>Verification Checklist:</strong>
+                  <ul>
+                    <li>Confirm MySQL Server is actively running locally on port <code>{{ dbPortInput }}</code>.</li>
+                    <li>Ensure database <code>{{ dbNameInput }}</code> exists (run <code>db/schema.sql</code> in MySQL Workbench).</li>
+                    <li>Verify username (<code>{{ dbUserInput }}</code>) and password match your local MySQL configuration.</li>
+                  </ul>
+                </div>
+              </div>
+            }
+          } @else {
+            <!-- Initial Status Banner -->
+            <div class="current-status-banner" [class.banner-online]="dbStatus().connected" [class.banner-offline]="!dbStatus().connected">
+              <div class="banner-badge">
+                <span class="status-dot"></span>
+                <span>{{ dbStatus().connected ? 'CURRENT STATE: CONNECTED' : 'CURRENT STATE: DISCONNECTED' }}</span>
+              </div>
+              <div class="banner-text">
+                @if (dbStatus().connected) {
+                  <span>Connected to <code>{{ dbStatus().database }}</code> on <code>{{ dbStatus().host }}:{{ dbStatus().port }}</code> ({{ dbStatus().totalProducts ?? 0 }} products, {{ dbStatus().totalStockUnits ?? 0 }} units across {{ dbStatus().tableCount ?? 6 }} tables).</span>
+                } @else {
+                  <span>{{ dbStatus().error || 'MySQL database is not reachable. Click "Test & Connect" below to check.' }}</span>
+                }
+              </div>
+            </div>
+          }
+
+          <!-- Connection Form Fields -->
+          <div class="form-row">
+            <div class="form-group col-8">
+              <label>MySQL Host:</label>
+              <input type="text" class="form-control" [(ngModel)]="dbHostInput" placeholder="localhost" />
+            </div>
+            <div class="form-group col-4">
+              <label>Port:</label>
+              <input type="number" class="form-control" [(ngModel)]="dbPortInput" placeholder="3306" />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Database Name:</label>
+            <input type="text" class="form-control" [(ngModel)]="dbNameInput" placeholder="inventory_db" />
+          </div>
+
+          <div class="form-row">
+            <div class="form-group col-6">
+              <label>Username:</label>
+              <input type="text" class="form-control" [(ngModel)]="dbUserInput" placeholder="root" />
+            </div>
+            <div class="form-group col-6">
+              <label>Password:</label>
+              <input type="password" class="form-control" [(ngModel)]="dbPasswordInput" placeholder="(Empty or password)" />
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-secondary" (click)="showDbModal.set(false)">
+            {{ dbFeedback()?.success ? 'Done' : 'Close' }}
+          </button>
+          <button class="btn-primary" (click)="saveDbConfig()" [disabled]="dbTesting()">
+            @if (dbTesting()) {
+              <span class="spinner-mini"></span>
+              <span>Testing Connection...</span>
+            } @else {
+              <span>⚡ Test & Connect Database</span>
+            }
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- Database Schema Drawer -->
+  @if (showSchemaDrawer()) {
+    <div class="drawer-backdrop" (click)="showSchemaDrawer.set(false)">
+      <div class="drawer-card" (click)="$event.stopPropagation()">
+        <div class="drawer-header">
+          <h3>📋 Inventory Database Schema & Preview</h3>
+          <button class="modal-close" (click)="showSchemaDrawer.set(false)">✕</button>
+        </div>
+        <div class="drawer-body">
+          <div class="drawer-section">
+            <h4>Live Sample Inventory Items (from MySQL):</h4>
+            @if (sampleInventory().length > 0) {
+              <div class="table-responsive">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>SKU</th>
+                      <th>Product</th>
+                      <th>Category</th>
+                      <th>Warehouse</th>
+                      <th>Stock</th>
+                      <th>Reorder Level</th>
+                      <th>Price</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (item of sampleInventory(); track item.sku) {
+                      <tr>
+                        <td><code>{{ item.sku }}</code></td>
+                        <td>{{ item.product_name }}</td>
+                        <td>{{ item.category }}</td>
+                        <td>{{ item.warehouse }}</td>
+                        <td>
+                          <span class="stock-pill" [class.low-stock]="item.quantity_on_hand <= item.reorder_level">
+                            {{ item.quantity_on_hand }}
+                          </span>
+                        </td>
+                        <td>{{ item.reorder_level }}</td>
+                        <td>${{ item.unit_price }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            } @else {
+              <p class="text-muted">No sample records found. Ensure MySQL is running with <code>db/schema.sql</code>.</p>
+            }
+          </div>
+
+          <div class="drawer-section">
+            <h4>Database Schema Given to Gemini:</h4>
+            <pre class="schema-code"><code>{{ schemaSummary() }}</code></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  }
+</div>

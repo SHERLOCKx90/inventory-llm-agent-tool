@@ -1,0 +1,20 @@
+
+# Maven generated files
+backend/target/
+*.class
+
+# Environment & local secret files
+.env
+*.env
+.env.*
+application-local.properties
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Node & Frontend
+node_modules/
+frontend/node_modules/
+frontend/.angular/
+frontend/dist/
